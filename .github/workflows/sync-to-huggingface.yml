@@ -7,6 +7,7 @@ on:
   workflow_dispatch: {}
 
 permissions:
+  id-token: write  # required to mint the OIDC token exchanged for a short-lived HF token
   contents: read
 
 jobs:
@@ -14,29 +15,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install huggingface_hub
+
+      - name: Install the hf CLI
+        run: |
+          curl -LsSf https://hf.co/cli/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Push contributions.jsonl to the Hugging Face dataset repo
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_DATASET_REPO: ${{ vars.HF_DATASET_REPO }}
+          # datasets/<owner>/<dataset> — set via a repository variable, no secret needed.
+          # A Trusted Publisher must be configured on that dataset repo's
+          # Settings > Trusted Publishers with provider "GitHub Actions" and
+          # claims repository=imattau/nostrhost-contributions, branch=main,
+          # workflow=sync-to-huggingface.yml.
+          HF_OIDC_RESOURCE: ${{ vars.HF_DATASET_RESOURCE }}
         run: |
-          if [ -z "$HF_DATASET_REPO" ]; then
-            echo "::error::repository variable HF_DATASET_REPO is not set (expected <owner>/<dataset>)"
+          if [ -z "$HF_OIDC_RESOURCE" ]; then
+            echo "::error::repository variable HF_DATASET_RESOURCE is not set (expected datasets/<owner>/<dataset>)"
             exit 1
           fi
-          python3 - <<'PY'
-          import os
-          from huggingface_hub import HfApi
-
-          api = HfApi(token=os.environ["HF_TOKEN"])
-          api.upload_file(
-              path_or_fileobj="contributions.jsonl",
-              path_in_repo="contributions.jsonl",
-              repo_id=os.environ["HF_DATASET_REPO"],
-              repo_type="dataset",
-              commit_message=f"Sync from imattau/nostrhost-contributions@{os.environ['GITHUB_SHA'][:12]}",
-          )
-          PY
+          hf upload "${HF_OIDC_RESOURCE#datasets/}" contributions.jsonl contributions.jsonl \
+            --repo-type dataset \
+            --commit-message "Sync from imattau/nostrhost-contributions@${GITHUB_SHA:0:12}"
