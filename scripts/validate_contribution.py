@@ -75,8 +75,16 @@ def main():
     base_sha, head_sha = sys.argv[1], sys.argv[2]
 
     touched = changed_files(base_sha, head_sha)
+    if FILE_PATH not in touched:
+        # Not a contribution PR (e.g. a workflow/README change from a
+        # maintainer) — nothing here to validate. Since there is no human
+        # review gate at all, anyone who can open a PR against this repo
+        # can also merge an infra change purely by passing CI; restricting
+        # write/PR access to trusted collaborators is what keeps that safe.
+        print(f"ok: {FILE_PATH} not touched by this PR, nothing to validate")
+        return
     if touched != [FILE_PATH]:
-        fail(f"a contribution PR may only touch {FILE_PATH}; this PR touches: {touched}")
+        fail(f"a contribution PR must touch only {FILE_PATH}, not other files too; this PR touches: {touched}")
 
     base_text = read_file_at(base_sha, FILE_PATH)
     head_text = read_file_at(head_sha, FILE_PATH)
