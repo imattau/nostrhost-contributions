@@ -1,0 +1,42 @@
+name: Sync to Hugging Face
+
+on:
+  push:
+    branches: [main]
+    paths: [contributions.jsonl]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install huggingface_hub
+      - name: Push contributions.jsonl to the Hugging Face dataset repo
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_DATASET_REPO: ${{ vars.HF_DATASET_REPO }}
+        run: |
+          if [ -z "$HF_DATASET_REPO" ]; then
+            echo "::error::repository variable HF_DATASET_REPO is not set (expected <owner>/<dataset>)"
+            exit 1
+          fi
+          python3 - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          api.upload_file(
+              path_or_fileobj="contributions.jsonl",
+              path_in_repo="contributions.jsonl",
+              repo_id=os.environ["HF_DATASET_REPO"],
+              repo_type="dataset",
+              commit_message=f"Sync from imattau/nostrhost-contributions@{os.environ['GITHUB_SHA'][:12]}",
+          )
+          PY
