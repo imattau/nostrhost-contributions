@@ -46,6 +46,23 @@ SECURITY_PATTERNS = [
 ]
 
 
+# Values the client generates deterministically from the local cycle id. They
+# always look like long hex (a sha256 digest), so the long-hex defense pattern
+# would otherwise flag every legitimate candidate. They carry no host content:
+# removing exactly these two values before scanning keeps the whole-line
+# defense surface for every other field.
+STRUCTURAL_HASH_FIELDS = ("candidate_id", "source_ref")
+
+
+def redaction_scan_text(line, record):
+    scan = line
+    for field in STRUCTURAL_HASH_FIELDS:
+        value = record.get(field)
+        if isinstance(value, str) and value:
+            scan = scan.replace(value, "")
+    return scan
+
+
 def fail(message):
     print(f"::error::{message}")
     sys.exit(1)
@@ -128,8 +145,9 @@ def main():
             fail(f"appended line {index} reuses candidate_id {candidate_id!r}, which is already in {FILE_PATH}")
         existing_ids.add(candidate_id)
 
+        scan_line = redaction_scan_text(line, record)
         for pattern in SECURITY_PATTERNS:
-            match = pattern.search(line)
+            match = pattern.search(scan_line)
             if match:
                 fail(
                     f"appended line {index} still contains what looks like unredacted sensitive data "
